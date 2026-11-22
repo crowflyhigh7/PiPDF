@@ -7,7 +7,8 @@ interface PageThumbnailProps {
   pageNumber: number; // 1-based
   rotation?: number; // 0, 90, 180, 270
   className?: string;
-  onLoaded?: (aspectRatio: number) => void;
+  renderScale?: number; // custom zoom scale, default 0.6
+  onLoaded?: (aspectRatio: number, width: number, height: number) => void;
 }
 
 export const PageThumbnail: React.FC<PageThumbnailProps> = ({
@@ -15,6 +16,7 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
   pageNumber,
   rotation = 0,
   className = '',
+  renderScale = 0.6,
   onLoaded,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -35,7 +37,7 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
         const page = await pdf.getPage(pageNumber);
         if (isCancelled) return;
 
-        const viewport = page.getViewport({ scale: 0.6, rotation });
+        const viewport = page.getViewport({ scale: renderScale, rotation });
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -49,7 +51,7 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
 
         if (!isCancelled) {
           setLoading(false);
-          onLoaded?.(viewport.width / viewport.height);
+          onLoaded?.(viewport.width / viewport.height, viewport.width, viewport.height);
         }
       } catch (err) {
         console.error('Error rendering page thumbnail:', err);
@@ -62,7 +64,7 @@ export const PageThumbnail: React.FC<PageThumbnailProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [file, pageNumber, rotation, onLoaded]);
+  }, [file, pageNumber, rotation, renderScale, onLoaded]);
 
   return (
     <div className={`relative flex items-center justify-center bg-slate-100 rounded-lg overflow-hidden shadow-sm ${className}`}>

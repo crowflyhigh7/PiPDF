@@ -1,9 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileUploader } from '../FileUploader';
 import { addTextAnnotationsToPdf, TextAnnotationItem } from '../../utils/pdfOperations';
 import { pdfjsLib } from '../../utils/pdfWorker';
 import { PageThumbnail } from '../PageThumbnail';
-import { Type, Download, Loader2, CheckCircle2, Trash2, Plus, Bold, RefreshCw, Move } from 'lucide-react';
+import {
+  Type,
+  Download,
+  Loader2,
+  CheckCircle2,
+  Trash2,
+  Plus,
+  Bold,
+  RefreshCw,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  ChevronLeft,
+  ChevronRight,
+  Move,
+} from 'lucide-react';
 import { savePdfFile } from '../../utils/downloadHelper';
 import confetti from 'canvas-confetti';
 
@@ -11,10 +26,22 @@ export const AddTextTool: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [currentPage, setCurrentPage] = useState<number>(1); // 1-based
+  const [zoomLevel, setZoomLevel] = useState<number>(1.25); // 1.25 = 125%
   const [annotations, setAnnotations] = useState<TextAnnotationItem[]>([]);
   const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDone, setIsDone] = useState(false);
+
+  // Dragging state for annotations
+  const [draggingAnnId, setDraggingAnnId] = useState<string | null>(null);
+  const dragStartPos = useRef<{ x: number; y: number; initialXRatio: number; initialYRatio: number }>({
+    x: 0,
+    y: 0,
+    initialXRatio: 0,
+    initialYRatio: 0,
+  });
+
+  const pageContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!file) {
@@ -38,9 +65,9 @@ export const AddTextTool: React.FC = () => {
             id: initialId,
             pageIndex: 0,
             text: '여기에 텍스트를 입력하세요',
-            xRatio: 0.2,
-            yRatio: 0.2,
-            fontSize: 18,
+            xRatio: 0.18,
+            yRatio: 0.22,
+            fontSize: 16,
             color: '#1e293b',
             isBold: true,
             bgColor: 'transparent',
@@ -63,16 +90,26 @@ export const AddTextTool: React.FC = () => {
     );
   };
 
-  const handlePreviewClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Zoom controls
+  const handleZoomIn = () => setZoomLevel((z) => Math.min(2.5, Number((z + 0.2).toFixed(2))));
+  const handleZoomOut = () => setZoomLevel((z) => Math.max(0.6, Number((z - 0.2).toFixed(2))));
+  const handleZoomReset = () => setZoomLevel(1.0);
+  const handleZoomFit = () => setZoomLevel(1.5);
+
+  // Click on PDF sheet to move selected or create new text box
+  const handleSheetClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // If we just finished dragging, ignore click
+    if (draggingAnnId) return;
+
     const rect = e.currentTarget.getBoundingClientRect();
-    const xRatio = Math.max(0.05, Math.min(0.85, (e.clientX - rect.left) / rect.width));
-    const yRatio = Math.max(0.05, Math.min(0.9, (e.clientY - rect.top) / rect.height));
+    const xRatio = Math.max(0.02, Math.min(0.88, (e.clientX - rect.left) / rect.width));
+    const yRatio = Math.max(0.02, Math.min(0.95, (e.clientY - rect.top) / rect.height));
 
     if (selectedAnnId) {
-      // Move selected annotation to clicked spot
+      // Move current selected annotation to this spot
       updateSelected({ xRatio, yRatio, pageIndex: currentPage - 1 });
     } else {
-      // Create new annotation at click
+      // Create new annotation
       const newId = String(Date.now());
       const newAnn: TextAnnotationItem = {
         id: newId,
@@ -90,14 +127,71 @@ export const AddTextTool: React.FC = () => {
     }
   };
 
+  // Mouse Drag to move text box
+  const handleMouseDownAnnotation = (
+    e: React.MouseEvent,
+    ann: TextAnnotationItem
+  ) => {
+    e.stopPropagation();
+    setSelectedAnnId(ann.id);
+    setDraggingAnnId(ann.id);
+
+    dragStartPos.current = {
+      x: e.clientX,
+      y: e.clientY,
+      initialXRatio: ann.xRatio,
+      initialYRatio: ann.yRatio,
+    };
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!draggingAnnId || !pageContainerRef.current) return;
+      const rect = pageContainerRef.current.getBoundingClientRect();
+      const deltaX = (e.clientX - dragStartPos.current.x) / rect.width;
+      const deltaY = (e.clientY - dragStartPos.current.y) / rect.height;
+
+      const newXRatio = Math.max(
+        0.01,
+        Math.min(0.92, dragStartPos.current.initialXRatio + deltaX)
+      );
+      const newYRatio = Math.max(
+        0.01,
+        Math.min(0.96, dragStartPos.current.initialYRatio + deltaY)
+      );
+
+      setAnnotations((prev) =>
+        prev.map((a) =>
+          a.id === draggingAnnId ? { ...a, xRatio: newXRatio, yRatio: newYRatio } : a
+        )
+      );
+    };
+
+    const handleMouseUp = () => {
+      if (draggingAnnId) {
+        setDraggingAnnId(null);
+      }
+    };
+
+    if (draggingAnnId) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingAnnId]);
+
   const addNewAnnotation = () => {
     const newId = String(Date.now());
     const newAnn: TextAnnotationItem = {
       id: newId,
       pageIndex: currentPage - 1,
-      text: '새 텍스트',
+      text: '텍스트 입력',
       xRatio: 0.3,
-      yRatio: 0.4,
+      yRatio: 0.3,
       fontSize: 16,
       color: '#1e293b',
       isBold: false,
@@ -120,7 +214,7 @@ export const AddTextTool: React.FC = () => {
       const res = await addTextAnnotationsToPdf(file, annotations);
       savePdfFile(res, `${file.name.replace('.pdf', '')}_edited.pdf`);
       setIsDone(true);
-      confetti({ particleCount: 80, spread: 60 });
+      confetti({ particleCount: 90, spread: 60 });
     } catch (err) {
       console.error(err);
       alert('PDF 텍스트 삽입 중 오류가 발생했습니다.');
@@ -134,12 +228,56 @@ export const AddTextTool: React.FC = () => {
   );
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 animate-fade-in">
-      <div className="text-center mb-8">
-        <h2 className="text-2xl sm:text-3xl font-black text-slate-900">PDF 텍스트 추가 (Edit PDF)</h2>
-        <p className="text-sm text-slate-500 mt-2">
-          문서의 원하는 위치를 클릭하여 한글/영문 텍스트를 자유롭게 삽입하고 서식을 조절합니다.
-        </p>
+    <div className="max-w-[1500px] mx-auto px-2 sm:px-4 py-4 animate-fade-in">
+      {/* Top Section */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
+            <span>PDF 텍스트 추가 (Edit PDF)</span>
+            {file && (
+              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                {file.name} (총 {totalPages}페이지)
+              </span>
+            )}
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            문서 위를 클릭하거나 드래그하여 원하는 위치에 텍스트를 정확하게 배치하세요.
+          </p>
+        </div>
+
+        {file && (
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setFile(null)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-xl transition-colors shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> 다른 파일 선택
+            </button>
+
+            <button
+              onClick={handleApply}
+              disabled={isProcessing || annotations.length === 0}
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-md shadow-brand-500/20 active:scale-95 transition-all text-sm"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>합성 중...</span>
+                </>
+              ) : isDone ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                  <span>다시 다운로드</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>텍스트 적용 및 PDF 다운로드</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {!file ? (
@@ -149,273 +287,257 @@ export const AddTextTool: React.FC = () => {
           onFilesSelected={(files) => setFile(files[0])}
         />
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
-            <div>
-              <h3 className="text-base font-bold text-slate-800">{file.name}</h3>
-              <p className="text-xs text-slate-400">
-                총 {totalPages}페이지 • 삽입된 텍스트 {annotations.length}개
-              </p>
-            </div>
-
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+          {/* Top Full-Featured Editing Toolbar */}
+          <div className="bg-slate-900 text-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-800">
+            {/* Left: Page Navigator & Zoom Controls */}
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setFile(null)}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> 다른 파일 선택
-              </button>
-
-              <button
-                onClick={addNewAnnotation}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span>텍스트 상자 추가</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="my-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Left: Interactive PDF Page View with Text Overlays */}
-            <div className="lg:col-span-7 flex flex-col items-center">
-              {/* Page Selector Controls */}
-              <div className="w-full max-w-sm flex items-center justify-between gap-2 mb-3 px-2">
+              {/* Page Navigator */}
+              <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5 border border-slate-700">
                 <button
                   disabled={currentPage <= 1}
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="px-2.5 py-1 text-xs font-bold bg-slate-100 hover:bg-slate-200 disabled:opacity-30 rounded-md transition-colors"
+                  className="p-1 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-200 transition-colors"
+                  title="이전 페이지"
                 >
-                  이전 페이지
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-xs font-bold text-slate-700">
-                  페이지 {currentPage} / {totalPages}
+                <span className="px-2 font-bold font-mono text-slate-200">
+                  {currentPage} / {totalPages}
                 </span>
                 <button
                   disabled={currentPage >= totalPages}
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="px-2.5 py-1 text-xs font-bold bg-slate-100 hover:bg-slate-200 disabled:opacity-30 rounded-md transition-colors"
+                  className="p-1 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-200 transition-colors"
+                  title="다음 페이지"
                 >
-                  다음 페이지
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Clickable Sheet Canvas Area */}
-              <div
-                onClick={handlePreviewClick}
-                className="relative w-full max-w-md aspect-[1/1.4] bg-white rounded-xl shadow-lg border-2 border-slate-300 hover:border-brand-400 cursor-crosshair overflow-hidden select-none transition-colors"
-                title="클릭하여 텍스트 위치를 지정하세요"
-              >
-                <PageThumbnail
-                  file={file}
-                  pageNumber={currentPage}
-                  className="w-full h-full pointer-events-none"
-                />
-
-                {/* Overlaid Annotations on this Page */}
-                {currentPageAnnotations.map((ann) => {
-                  const isSelected = ann.id === selectedAnnId;
-                  return (
-                    <div
-                      key={ann.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedAnnId(ann.id);
-                      }}
-                      className={`absolute rounded px-1.5 py-0.5 cursor-pointer transition-all duration-75 ${
-                        isSelected
-                          ? 'ring-2 ring-brand-500 bg-brand-50/90 shadow-md z-20'
-                          : 'border border-dashed border-slate-400 bg-white/70 hover:bg-white z-10'
-                      }`}
-                      style={{
-                        left: `${ann.xRatio * 100}%`,
-                        top: `${ann.yRatio * 100}%`,
-                        color: ann.color,
-                        fontWeight: ann.isBold ? 700 : 400,
-                        fontSize: `${Math.max(10, ann.fontSize * 0.75)}px`,
-                        backgroundColor:
-                          ann.bgColor === 'transparent'
-                            ? isSelected
-                              ? 'rgba(255,241,242,0.9)'
-                              : 'transparent'
-                            : ann.bgColor,
-                      }}
-                    >
-                      <span className="whitespace-pre-wrap leading-tight">{ann.text || '(빈 텍스트)'}</span>
-                      {isSelected && (
-                        <div className="absolute -top-6 left-0 bg-brand-600 text-white text-[9px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1">
-                          <Move className="w-2.5 h-2.5" /> 선택됨
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+              {/* Zoom Controls */}
+              <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5 border border-slate-700">
+                <button
+                  onClick={handleZoomOut}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-200 transition-colors"
+                  title="축소"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={handleZoomReset}
+                  className="px-2 font-bold font-mono text-slate-200 hover:text-white"
+                  title="100% 원본 크기"
+                >
+                  {Math.round(zoomLevel * 100)}%
+                </button>
+                <button
+                  onClick={handleZoomIn}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-200 transition-colors"
+                  title="확대"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={handleZoomFit}
+                  className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors ml-1 border-l border-slate-700"
+                  title="너비에 맞게 시원하게 보기 (150%)"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
               </div>
 
-              <span className="text-[11px] text-slate-400 mt-2 text-center">
-                💡 미리보기 위를 클릭하면 선택된 텍스트가 해당 위치로 이동합니다.
-              </span>
+              {/* Add New Box Button */}
+              <button
+                onClick={addNewAnnotation}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg shadow-sm transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ 텍스트 추가</span>
+              </button>
             </div>
 
-            {/* Right: Text Configuration Panel */}
-            <div className="lg:col-span-5 bg-slate-50 rounded-2xl p-6 border border-slate-200 flex flex-col justify-between">
-              {selectedAnn ? (
-                <div className="space-y-5">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                    <span className="text-sm font-bold text-slate-800">텍스트 서식 편집</span>
-                    <button
-                      onClick={() => removeAnnotation(selectedAnn.id)}
-                      className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
-                      title="이 텍스트 상자 삭제"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Textarea */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                      텍스트 내용 (한글/영문 지원)
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={selectedAnn.text}
-                      onChange={(e) => updateSelected({ text: e.target.value })}
-                      placeholder="추가할 텍스트를 입력하세요"
-                      className="w-full px-3 py-2 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
-                    />
-                  </div>
-
-                  {/* Font Size & Bold */}
-                  <div className="grid grid-cols-2 gap-4 items-center">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        글자 크기 ({selectedAnn.fontSize}pt)
-                      </label>
-                      <input
-                        type="range"
-                        min="10"
-                        max="48"
-                        value={selectedAnn.fontSize}
-                        onChange={(e) => updateSelected({ fontSize: Number(e.target.value) })}
-                        className="w-full accent-brand-600 mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">굵게 (Bold)</label>
-                      <button
-                        type="button"
-                        onClick={() => updateSelected({ isBold: !selectedAnn.isBold })}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                          selectedAnn.isBold
-                            ? 'bg-brand-600 text-white border-brand-600'
-                            : 'bg-white text-slate-700 border-slate-300'
-                        }`}
-                      >
-                        <Bold className="w-3.5 h-3.5" />
-                        <span>굵게</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Color Palette */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-2">글자 색상</label>
-                    <div className="flex items-center gap-2">
-                      {[
-                        '#0f172a', // 검정
-                        '#e11d48', // 빨강
-                        '#2563eb', // 파랑
-                        '#16a34a', // 초록
-                        '#d97706', // 주황
-                      ].map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          onClick={() => updateSelected({ color })}
-                          className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                            selectedAnn.color === color
-                              ? 'scale-110 border-slate-900 ring-2 ring-brand-400'
-                              : 'border-transparent'
-                          }`}
-                          style={{ backgroundColor: color }}
-                        />
-                      ))}
-                      <input
-                        type="color"
-                        value={selectedAnn.color}
-                        onChange={(e) => updateSelected({ color: e.target.value })}
-                        className="w-8 h-8 rounded-lg cursor-pointer border border-slate-300 ml-2 p-0.5"
-                        title="사용자 지정 색상"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Background Color */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-2">배경색</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => updateSelected({ bgColor: 'transparent' })}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
-                          selectedAnn.bgColor === 'transparent'
-                            ? 'bg-brand-600 text-white border-brand-600'
-                            : 'bg-white text-slate-700 border-slate-300'
-                        }`}
-                      >
-                        투명 배경
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateSelected({ bgColor: '#ffffff' })}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
-                          selectedAnn.bgColor === '#ffffff'
-                            ? 'bg-brand-600 text-white border-brand-600'
-                            : 'bg-white text-slate-700 border-slate-300'
-                        }`}
-                      >
-                        흰색 박스 배경
-                      </button>
-                    </div>
-                  </div>
+            {/* Right / Center: Selected Text Box Attributes */}
+            {selectedAnn ? (
+              <div className="flex flex-wrap items-center gap-3 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700">
+                {/* Text Content Input */}
+                <div className="flex items-center gap-1.5">
+                  <Type className="w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={selectedAnn.text}
+                    onChange={(e) => updateSelected({ text: e.target.value })}
+                    placeholder="텍스트 입력"
+                    className="bg-slate-900 border border-slate-600 text-white px-2.5 py-1 rounded-md text-xs w-44 sm:w-60 focus:outline-none focus:border-brand-500"
+                  />
                 </div>
-              ) : (
-                <div className="p-8 text-center text-slate-400 flex flex-col items-center justify-center h-full">
-                  <Type className="w-8 h-8 mb-2 opacity-50" />
-                  <p className="text-sm font-semibold">선택된 텍스트 상자가 없습니다.</p>
-                  <p className="text-xs mt-1">
-                    왼쪽 문서 위를 클릭하거나 '텍스트 상자 추가' 버튼을 눌러보세요.
-                  </p>
-                </div>
-              )}
 
-              {/* Bottom Action */}
-              <div className="pt-6 mt-6 border-t border-slate-200">
+                {/* Font Size */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] text-slate-400">크기</span>
+                  <input
+                    type="number"
+                    min="10"
+                    max="60"
+                    value={selectedAnn.fontSize}
+                    onChange={(e) => updateSelected({ fontSize: Number(e.target.value) })}
+                    className="bg-slate-900 border border-slate-600 text-white px-1.5 py-1 rounded-md text-xs w-12 text-center"
+                  />
+                  <span className="text-[11px] text-slate-400">pt</span>
+                </div>
+
+                {/* Bold */}
                 <button
-                  onClick={handleApply}
-                  disabled={isProcessing || annotations.length === 0}
-                  className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-bold rounded-xl shadow-lg shadow-brand-500/25 active:scale-95 transition-all text-sm"
+                  onClick={() => updateSelected({ isBold: !selectedAnn.isBold })}
+                  className={`p-1 rounded font-bold transition-colors ${
+                    selectedAnn.isBold
+                      ? 'bg-brand-600 text-white'
+                      : 'hover:bg-slate-700 text-slate-300'
+                  }`}
+                  title="굵게"
                 >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>텍스트 합성 중...</span>
-                    </>
-                  ) : isDone ? (
-                    <>
-                      <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-                      <span>다시 다운로드</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-5 h-5" />
-                      <span>텍스트 적용 및 PDF 다운로드</span>
-                    </>
-                  )}
+                  <Bold className="w-4 h-4" />
+                </button>
+
+                {/* Color Palette */}
+                <div className="flex items-center gap-1">
+                  {[
+                    '#0f172a', // 블랙
+                    '#e11d48', // 레드
+                    '#2563eb', // 블루
+                    '#16a34a', // 그린
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => updateSelected({ color: c })}
+                      className={`w-4 h-4 rounded-full border transition-transform ${
+                        selectedAnn.color === c ? 'scale-125 border-white ring-2 ring-brand-500' : 'border-slate-500'
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={selectedAnn.color}
+                    onChange={(e) => updateSelected({ color: e.target.value })}
+                    className="w-5 h-5 rounded cursor-pointer border border-slate-600 ml-1 p-0 bg-transparent"
+                    title="커스텀 색상"
+                  />
+                </div>
+
+                {/* Background Toggle */}
+                <div className="flex items-center gap-1 border-l border-slate-700 pl-2">
+                  <button
+                    onClick={() =>
+                      updateSelected({
+                        bgColor: selectedAnn.bgColor === '#ffffff' ? 'transparent' : '#ffffff',
+                      })
+                    }
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors ${
+                      selectedAnn.bgColor === '#ffffff'
+                        ? 'bg-white text-slate-900 border-white font-bold'
+                        : 'border-slate-600 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    흰색 배경
+                  </button>
+                </div>
+
+                {/* Delete button */}
+                <button
+                  onClick={() => removeAnnotation(selectedAnn.id)}
+                  className="p-1 text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 rounded transition-colors ml-1"
+                  title="삭제"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
+            ) : (
+              <div className="text-slate-400 text-xs italic">
+                문서 위의 텍스트를 클릭하거나 드래그하여 서식을 조절하세요.
+              </div>
+            )}
+          </div>
+
+          {/* Huge Main Canvas Area with Scrolling */}
+          <div className="relative bg-slate-200/80 p-6 md:p-12 overflow-auto max-h-[calc(100vh-230px)] min-h-[680px] flex items-start justify-center select-none">
+            {/* Sheet Container matching zoomLevel */}
+            <div
+              ref={pageContainerRef}
+              onClick={handleSheetClick}
+              className="relative bg-white shadow-2xl rounded-sm transition-all duration-100 ease-out cursor-crosshair group ring-1 ring-slate-900/10"
+              style={{
+                width: `${Math.round(750 * zoomLevel)}px`,
+              }}
+            >
+              {/* HiDPI Crisp PDF Page Rendering */}
+              <PageThumbnail
+                file={file}
+                pageNumber={currentPage}
+                renderScale={Math.max(1.2, zoomLevel * 1.5)} // Crisp vector/text quality
+                className="w-full h-auto pointer-events-none rounded-sm"
+              />
+
+              {/* Overlaid Draggable Text Annotations */}
+              {currentPageAnnotations.map((ann) => {
+                const isSelected = ann.id === selectedAnnId;
+                const isDraggingThis = draggingAnnId === ann.id;
+
+                return (
+                  <div
+                    key={ann.id}
+                    onMouseDown={(e) => handleMouseDownAnnotation(e, ann)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedAnnId(ann.id);
+                    }}
+                    className={`absolute rounded px-2 py-1 transition-shadow duration-75 select-none ${
+                      isSelected
+                        ? 'ring-2 ring-brand-500 shadow-xl z-30 cursor-grab active:cursor-grabbing'
+                        : 'border border-dashed border-slate-400 hover:border-brand-400 hover:shadow-md z-20 cursor-pointer'
+                    } ${isDraggingThis ? 'opacity-85 scale-105' : ''}`}
+                    style={{
+                      left: `${ann.xRatio * 100}%`,
+                      top: `${ann.yRatio * 100}%`,
+                      color: ann.color,
+                      fontWeight: ann.isBold ? 700 : 400,
+                      // Font size scaled relative to document zoom so it looks 1:1 identical to final output
+                      fontSize: `${ann.fontSize * (zoomLevel / 1.0)}px`,
+                      backgroundColor:
+                        ann.bgColor === 'transparent'
+                          ? isSelected
+                            ? 'rgba(255, 241, 242, 0.85)'
+                            : 'rgba(255, 255, 255, 0.4)'
+                          : ann.bgColor,
+                    }}
+                  >
+                    <span className="whitespace-pre-wrap leading-tight block">
+                      {ann.text || '(텍스트를 입력하세요)'}
+                    </span>
+
+                    {/* Drag Handle Tag */}
+                    {isSelected && (
+                      <div className="absolute -top-5 left-0 bg-brand-600 text-white text-[9px] px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-1 shadow-sm pointer-events-none whitespace-nowrap">
+                        <Move className="w-2.5 h-2.5" /> 드래그하여 이동
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Bottom Helpful Info Bar */}
+          <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-700">💡 사용 팁:</span>
+              <span>
+                상단의 <strong>[+]</strong> 버튼이나 <strong>[너비 맞춤]</strong>으로 페이지를 크게 확대한 뒤,
+                문서 위 텍스트를 마우스로 잡고 <strong>드래그</strong>하여 빈칸에 정확하게 맞추세요.
+              </span>
+            </div>
+            <div className="text-slate-400 font-mono text-[11px]">
+              배율: {Math.round(zoomLevel * 100)}% • 가로 너비: {Math.round(750 * zoomLevel)}px
             </div>
           </div>
         </div>
