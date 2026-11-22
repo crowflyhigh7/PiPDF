@@ -18,9 +18,19 @@ import {
   ChevronLeft,
   ChevronRight,
   Move,
+  Check,
 } from 'lucide-react';
 import { savePdfFile } from '../../utils/downloadHelper';
 import confetti from 'canvas-confetti';
+
+// Available font families
+const FONT_OPTIONS = [
+  { id: '"Noto Sans KR", sans-serif', label: '본고딕 (Noto Sans)' },
+  { id: '"Nanum Gothic", sans-serif', label: '나눔고딕 (Nanum Gothic)' },
+  { id: '"Nanum Myeongjo", serif', label: '나눔명조 (바탕체)' },
+  { id: '"Nanum Pen Script", cursive', label: '나눔손글씨 (필기체)' },
+  { id: 'monospace', label: '고정폭 (Monospace)' },
+];
 
 export const AddTextTool: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -32,6 +42,9 @@ export const AddTextTool: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDone, setIsDone] = useState(false);
 
+  // In-place inline editing on canvas
+  const [editingAnnId, setEditingAnnId] = useState<string | null>(null);
+
   // Dragging state for annotations
   const [draggingAnnId, setDraggingAnnId] = useState<string | null>(null);
   const dragStartPos = useRef<{ x: number; y: number; initialXRatio: number; initialYRatio: number }>({
@@ -42,6 +55,7 @@ export const AddTextTool: React.FC = () => {
   });
 
   const pageContainerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!file) {
@@ -71,6 +85,7 @@ export const AddTextTool: React.FC = () => {
             color: '#1e293b',
             isBold: true,
             bgColor: 'transparent',
+            fontFamily: '"Noto Sans KR", sans-serif',
           },
         ]);
         setSelectedAnnId(initialId);
@@ -96,38 +111,46 @@ export const AddTextTool: React.FC = () => {
   const handleZoomReset = () => setZoomLevel(1.0);
   const handleZoomFit = () => setZoomLevel(1.5);
 
-  // Click on PDF sheet to move selected or create new text box
+  // Finish editing / deselect
+  const handleFinishEditing = () => {
+    setSelectedAnnId(null);
+    setEditingAnnId(null);
+  };
+
+  // Click on background of PDF sheet:
+  // If an item was selected, deselect it and finish! (Solves Question 1)
   const handleSheetClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // If we just finished dragging, ignore click
     if (draggingAnnId) return;
 
+    if (selectedAnnId || editingAnnId) {
+      // Deselect and exit editing mode smoothly
+      handleFinishEditing();
+      return;
+    }
+
+    // If nothing was selected, create a new text box at click position
     const rect = e.currentTarget.getBoundingClientRect();
     const xRatio = Math.max(0.02, Math.min(0.88, (e.clientX - rect.left) / rect.width));
     const yRatio = Math.max(0.02, Math.min(0.95, (e.clientY - rect.top) / rect.height));
 
-    if (selectedAnnId) {
-      // Move current selected annotation to this spot
-      updateSelected({ xRatio, yRatio, pageIndex: currentPage - 1 });
-    } else {
-      // Create new annotation
-      const newId = String(Date.now());
-      const newAnn: TextAnnotationItem = {
-        id: newId,
-        pageIndex: currentPage - 1,
-        text: '새 텍스트',
-        xRatio,
-        yRatio,
-        fontSize: 16,
-        color: '#1e293b',
-        isBold: false,
-        bgColor: 'transparent',
-      };
-      setAnnotations((prev) => [...prev, newAnn]);
-      setSelectedAnnId(newId);
-    }
+    const newId = String(Date.now());
+    const newAnn: TextAnnotationItem = {
+      id: newId,
+      pageIndex: currentPage - 1,
+      text: '새 텍스트',
+      xRatio,
+      yRatio,
+      fontSize: 16,
+      color: '#1e293b',
+      isBold: false,
+      bgColor: 'transparent',
+      fontFamily: '"Noto Sans KR", sans-serif',
+    };
+    setAnnotations((prev) => [...prev, newAnn]);
+    setSelectedAnnId(newId);
   };
 
-  // Mouse Drag to move text box
+  // Mouse Drag to move text box smoothly
   const handleMouseDownAnnotation = (
     e: React.MouseEvent,
     ann: TextAnnotationItem
@@ -190,12 +213,13 @@ export const AddTextTool: React.FC = () => {
       id: newId,
       pageIndex: currentPage - 1,
       text: '텍스트 입력',
-      xRatio: 0.3,
+      xRatio: 0.25,
       yRatio: 0.3,
       fontSize: 16,
       color: '#1e293b',
       isBold: false,
       bgColor: 'transparent',
+      fontFamily: '"Noto Sans KR", sans-serif',
     };
     setAnnotations((prev) => [...prev, newAnn]);
     setSelectedAnnId(newId);
@@ -204,6 +228,7 @@ export const AddTextTool: React.FC = () => {
   const removeAnnotation = (id: string) => {
     setAnnotations((prev) => prev.filter((a) => a.id !== id));
     if (selectedAnnId === id) setSelectedAnnId(null);
+    if (editingAnnId === id) setEditingAnnId(null);
   };
 
   const handleApply = async () => {
@@ -228,8 +253,8 @@ export const AddTextTool: React.FC = () => {
   );
 
   return (
-    <div className="max-w-[1500px] mx-auto px-2 sm:px-4 py-4 animate-fade-in">
-      {/* Top Section */}
+    <div className="max-w-[1550px] mx-auto px-2 sm:px-4 py-4 animate-fade-in">
+      {/* Top Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
@@ -241,7 +266,7 @@ export const AddTextTool: React.FC = () => {
             )}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            문서 위를 클릭하거나 드래그하여 원하는 위치에 텍스트를 정확하게 배치하세요.
+            원하는 위치를 클릭하여 텍스트를 입력하고 폰트, 크기, 색상을 변경하세요.
           </p>
         </div>
 
@@ -291,7 +316,7 @@ export const AddTextTool: React.FC = () => {
           {/* Top Full-Featured Editing Toolbar */}
           <div className="bg-slate-900 text-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-800">
             {/* Left: Page Navigator & Zoom Controls */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               {/* Page Navigator */}
               <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5 border border-slate-700">
                 <button
@@ -359,22 +384,43 @@ export const AddTextTool: React.FC = () => {
 
             {/* Right / Center: Selected Text Box Attributes */}
             {selectedAnn ? (
-              <div className="flex flex-wrap items-center gap-3 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700">
-                {/* Text Content Input */}
+              <div className="flex flex-wrap items-center gap-2.5 bg-slate-800/95 px-3 py-1.5 rounded-xl border border-slate-700">
+                {/* 1. Text Content Input with Enter/Esc handling */}
                 <div className="flex items-center gap-1.5">
                   <Type className="w-3.5 h-3.5 text-slate-400" />
                   <input
+                    ref={inputRef}
                     type="text"
                     value={selectedAnn.text}
                     onChange={(e) => updateSelected({ text: e.target.value })}
-                    placeholder="텍스트 입력"
-                    className="bg-slate-900 border border-slate-600 text-white px-2.5 py-1 rounded-md text-xs w-44 sm:w-60 focus:outline-none focus:border-brand-500"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === 'Escape') {
+                        e.currentTarget.blur();
+                        handleFinishEditing();
+                      }
+                    }}
+                    placeholder="텍스트 입력 (Enter 또는 Esc로 완료)"
+                    className="bg-slate-900 border border-slate-600 text-white px-2.5 py-1 rounded-md text-xs w-40 sm:w-52 focus:outline-none focus:border-brand-500"
                   />
                 </div>
 
-                {/* Font Size */}
+                {/* 2. Font Family Selector (폰트 변경 기능) */}
                 <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-slate-400">크기</span>
+                  <select
+                    value={selectedAnn.fontFamily || '"Noto Sans KR", sans-serif'}
+                    onChange={(e) => updateSelected({ fontFamily: e.target.value })}
+                    className="bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded-md text-xs focus:outline-none focus:border-brand-500"
+                  >
+                    {FONT_OPTIONS.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Font Size */}
+                <div className="flex items-center gap-1">
                   <input
                     type="number"
                     min="10"
@@ -386,7 +432,7 @@ export const AddTextTool: React.FC = () => {
                   <span className="text-[11px] text-slate-400">pt</span>
                 </div>
 
-                {/* Bold */}
+                {/* 4. Bold */}
                 <button
                   onClick={() => updateSelected({ isBold: !selectedAnn.isBold })}
                   className={`p-1 rounded font-bold transition-colors ${
@@ -399,7 +445,7 @@ export const AddTextTool: React.FC = () => {
                   <Bold className="w-4 h-4" />
                 </button>
 
-                {/* Color Palette */}
+                {/* 5. Color Palette */}
                 <div className="flex items-center gap-1">
                   {[
                     '#0f172a', // 블랙
@@ -425,46 +471,60 @@ export const AddTextTool: React.FC = () => {
                   />
                 </div>
 
-                {/* Background Toggle */}
-                <div className="flex items-center gap-1 border-l border-slate-700 pl-2">
-                  <button
-                    onClick={() =>
-                      updateSelected({
-                        bgColor: selectedAnn.bgColor === '#ffffff' ? 'transparent' : '#ffffff',
-                      })
-                    }
-                    className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors ${
-                      selectedAnn.bgColor === '#ffffff'
-                        ? 'bg-white text-slate-900 border-white font-bold'
-                        : 'border-slate-600 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    흰색 배경
-                  </button>
-                </div>
+                {/* 6. Background Toggle */}
+                <button
+                  onClick={() =>
+                    updateSelected({
+                      bgColor: selectedAnn.bgColor === '#ffffff' ? 'transparent' : '#ffffff',
+                    })
+                  }
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors ${
+                    selectedAnn.bgColor === '#ffffff'
+                      ? 'bg-white text-slate-900 border-white font-bold'
+                      : 'border-slate-600 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  흰색 배경
+                </button>
+
+                {/* 7. Complete & Exit Button (입력 완료 빠져나오기 버튼) */}
+                <button
+                  onClick={handleFinishEditing}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-md shadow-xs transition-colors text-[11px]"
+                  title="입력 완료 (Enter 또는 문서 바깥 클릭으로도 완료 가능)"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>완료</span>
+                </button>
 
                 {/* Delete button */}
                 <button
                   onClick={() => removeAnnotation(selectedAnn.id)}
-                  className="p-1 text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 rounded transition-colors ml-1"
+                  className="p-1 text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 rounded transition-colors ml-0.5"
                   title="삭제"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             ) : (
-              <div className="text-slate-400 text-xs italic">
-                문서 위의 텍스트를 클릭하거나 드래그하여 서식을 조절하세요.
+              <div className="text-slate-400 text-xs italic flex items-center gap-1.5">
+                <span>문서 위의 텍스트를 클릭하거나 더블클릭하여 편집하세요.</span>
               </div>
             )}
           </div>
 
           {/* Huge Main Canvas Area with Scrolling */}
-          <div className="relative bg-slate-200/80 p-6 md:p-12 overflow-auto max-h-[calc(100vh-230px)] min-h-[680px] flex items-start justify-center select-none">
+          <div
+            onClick={handleFinishEditing}
+            className="relative bg-slate-200/80 p-6 md:p-12 overflow-auto max-h-[calc(100vh-230px)] min-h-[680px] flex items-start justify-center select-none"
+          >
             {/* Sheet Container matching zoomLevel */}
             <div
               ref={pageContainerRef}
-              onClick={handleSheetClick}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSheetClick(e);
+              }}
               className="relative bg-white shadow-2xl rounded-sm transition-all duration-100 ease-out cursor-crosshair group ring-1 ring-slate-900/10"
               style={{
                 width: `${Math.round(750 * zoomLevel)}px`,
@@ -478,9 +538,10 @@ export const AddTextTool: React.FC = () => {
                 className="w-full h-auto pointer-events-none rounded-sm"
               />
 
-              {/* Overlaid Draggable Text Annotations */}
+              {/* Overlaid Draggable & In-Place Text Annotations */}
               {currentPageAnnotations.map((ann) => {
                 const isSelected = ann.id === selectedAnnId;
+                const isEditing = ann.id === editingAnnId;
                 const isDraggingThis = draggingAnnId === ann.id;
 
                 return (
@@ -490,6 +551,11 @@ export const AddTextTool: React.FC = () => {
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedAnnId(ann.id);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedAnnId(ann.id);
+                      setEditingAnnId(ann.id);
                     }}
                     className={`absolute rounded px-2 py-1 transition-shadow duration-75 select-none ${
                       isSelected
@@ -501,6 +567,7 @@ export const AddTextTool: React.FC = () => {
                       top: `${ann.yRatio * 100}%`,
                       color: ann.color,
                       fontWeight: ann.isBold ? 700 : 400,
+                      fontFamily: ann.fontFamily || '"Noto Sans KR", sans-serif',
                       // Font size scaled relative to document zoom so it looks 1:1 identical to final output
                       fontSize: `${ann.fontSize * (zoomLevel / 1.0)}px`,
                       backgroundColor:
@@ -511,14 +578,34 @@ export const AddTextTool: React.FC = () => {
                           : ann.bgColor,
                     }}
                   >
-                    <span className="whitespace-pre-wrap leading-tight block">
-                      {ann.text || '(텍스트를 입력하세요)'}
-                    </span>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        autoFocus
+                        value={ann.text}
+                        onChange={(e) => updateSelected({ text: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === 'Escape') {
+                            setEditingAnnId(null);
+                          }
+                        }}
+                        onBlur={() => setEditingAnnId(null)}
+                        className="bg-white/95 text-slate-900 border border-brand-500 outline-none px-1 rounded shadow-sm w-auto min-w-[80px]"
+                        style={{
+                          fontSize: `${ann.fontSize * (zoomLevel / 1.0)}px`,
+                          fontFamily: ann.fontFamily || '"Noto Sans KR", sans-serif',
+                        }}
+                      />
+                    ) : (
+                      <span className="whitespace-pre-wrap leading-tight block">
+                        {ann.text || '(텍스트를 입력하세요)'}
+                      </span>
+                    )}
 
-                    {/* Drag Handle Tag */}
-                    {isSelected && (
+                    {/* Drag Handle Tag & Exit Hint */}
+                    {isSelected && !isEditing && (
                       <div className="absolute -top-5 left-0 bg-brand-600 text-white text-[9px] px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-1 shadow-sm pointer-events-none whitespace-nowrap">
-                        <Move className="w-2.5 h-2.5" /> 드래그하여 이동
+                        <Move className="w-2.5 h-2.5" /> 드래그하여 이동 (더블클릭으로 직접 입력)
                       </div>
                     )}
                   </div>
@@ -532,8 +619,8 @@ export const AddTextTool: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="font-bold text-slate-700">💡 사용 팁:</span>
               <span>
-                상단의 <strong>[+]</strong> 버튼이나 <strong>[너비 맞춤]</strong>으로 페이지를 크게 확대한 뒤,
-                문서 위 텍스트를 마우스로 잡고 <strong>드래그</strong>하여 빈칸에 정확하게 맞추세요.
+                텍스트 입력을 마친 후 <strong>[Enter 키]</strong>, <strong>[Esc 키]</strong>를 누르거나
+                툴바의 <strong>[완료 ✓]</strong> 버튼을 누르면 입력창에서 빠져나옵니다. 문서의 빈 곳을 클릭해도 완료됩니다.
               </span>
             </div>
             <div className="text-slate-400 font-mono text-[11px]">

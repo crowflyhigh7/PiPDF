@@ -475,6 +475,7 @@ export interface TextAnnotationItem {
   color: string; // hex (e.g. #000000)
   isBold?: boolean;
   bgColor?: string; // hex or 'transparent'
+  fontFamily?: string; // e.g. 'Nanum Gothic', 'Nanum Myeongjo', 'Nanum Pen Script', etc.
 }
 
 export async function addTextAnnotationsToPdf(
@@ -497,7 +498,8 @@ export async function addTextAnnotationsToPdf(
     const ctx = canvas.getContext('2d');
     if (!ctx) continue;
 
-    const fontStyle = `${ann.isBold ? 'bold ' : ''}${ann.fontSize * scale}px "Plus Jakarta Sans", "Pretendard", -apple-system, sans-serif`;
+    const chosenFont = ann.fontFamily || 'Pretendard, "Noto Sans KR", sans-serif';
+    const fontStyle = `${ann.isBold ? 'bold ' : ''}${ann.fontSize * scale}px ${chosenFont}, sans-serif`;
     ctx.font = fontStyle;
 
     const lines = ann.text.split('\n');
