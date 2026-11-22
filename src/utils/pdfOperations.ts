@@ -509,10 +509,10 @@ export async function addTextAnnotationsToPdf(
       if (w > maxLineWidth) maxLineWidth = w;
     });
 
-    const lineHeight = ann.fontSize * scale * 1.3;
-    const pad = 8 * scale;
-    const canvasWidth = maxLineWidth + pad * 2;
-    const canvasHeight = lineHeight * lines.length + pad * 2;
+    // Exact tight line height to match CSS line-height: 1.25
+    const lineHeight = ann.fontSize * scale * 1.25;
+    const canvasWidth = Math.max(1, Math.ceil(maxLineWidth));
+    const canvasHeight = Math.max(1, Math.ceil(lineHeight * lines.length));
 
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
@@ -523,13 +523,13 @@ export async function addTextAnnotationsToPdf(
       ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     }
 
-    // Text rendering
+    // Text rendering with ZERO top/left padding to guarantee 1:1 alignment
     ctx.font = fontStyle;
     ctx.fillStyle = ann.color;
     ctx.textBaseline = 'top';
 
     lines.forEach((l, i) => {
-      ctx.fillText(l, pad, pad + i * lineHeight);
+      ctx.fillText(l, 0, Math.round(i * lineHeight));
     });
 
     const dataUrl = canvas.toDataURL('image/png');
@@ -541,8 +541,11 @@ export async function addTextAnnotationsToPdf(
     const drawWidth = canvasWidth / scale;
     const drawHeight = canvasHeight / scale;
 
+    // In PDF coordinates: bottom-left is (0,0), top is height
+    // HTML yRatio is measured from the top edge (0.0 at top, 1.0 at bottom)
     const x = width * ann.xRatio;
-    const y = height - height * ann.yRatio - drawHeight;
+    const topYInPdf = height - (height * ann.yRatio);
+    const y = topYInPdf - drawHeight;
 
     page.drawImage(embeddedImg, {
       x: Math.max(0, Math.min(width - drawWidth, x)),

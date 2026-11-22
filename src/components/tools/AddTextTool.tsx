@@ -37,6 +37,10 @@ export const AddTextTool: React.FC = () => {
   const [totalPages, setTotalPages] = useState<number>(1);
   const [currentPage, setCurrentPage] = useState<number>(1); // 1-based
   const [zoomLevel, setZoomLevel] = useState<number>(1.25); // 1.25 = 125%
+  const [pdfPagePtSize, setPdfPagePtSize] = useState<{ width: number; height: number }>({
+    width: 595.28,
+    height: 841.89,
+  });
   const [annotations, setAnnotations] = useState<TextAnnotationItem[]>([]);
   const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -71,6 +75,14 @@ export const AddTextTool: React.FC = () => {
         const doc = await pdfjsLib.getDocument({ data: buffer }).promise;
         setTotalPages(doc.numPages);
         setCurrentPage(1);
+
+        // Get actual page dimension in PDF points (72 DPI)
+        const firstPage = await doc.getPage(1);
+        const originalViewport = firstPage.getViewport({ scale: 1 });
+        setPdfPagePtSize({
+          width: originalViewport.width,
+          height: originalViewport.height,
+        });
 
         // Add a default sample text annotation on page 1
         const initialId = String(Date.now());
@@ -251,6 +263,10 @@ export const AddTextTool: React.FC = () => {
   const currentPageAnnotations = annotations.filter(
     (a) => a.pageIndex === currentPage - 1
   );
+
+  const sheetWidthPx = Math.round(750 * zoomLevel);
+  // Exact conversion ratio from PDF Points (72 DPI) to screen CSS pixels (96 DPI scaled)
+  const ptToPxRatio = sheetWidthPx / (pdfPagePtSize.width || 595.28);
 
   return (
     <div className="max-w-[1550px] mx-auto px-2 sm:px-4 py-4 animate-fade-in">
@@ -527,7 +543,7 @@ export const AddTextTool: React.FC = () => {
               }}
               className="relative bg-white shadow-2xl rounded-sm transition-all duration-100 ease-out cursor-crosshair group ring-1 ring-slate-900/10"
               style={{
-                width: `${Math.round(750 * zoomLevel)}px`,
+                width: `${sheetWidthPx}px`,
               }}
             >
               {/* HiDPI Crisp PDF Page Rendering */}
@@ -543,6 +559,7 @@ export const AddTextTool: React.FC = () => {
                 const isSelected = ann.id === selectedAnnId;
                 const isEditing = ann.id === editingAnnId;
                 const isDraggingThis = draggingAnnId === ann.id;
+                const calculatedFontSizePx = ann.fontSize * ptToPxRatio;
 
                 return (
                   <div
@@ -557,24 +574,26 @@ export const AddTextTool: React.FC = () => {
                       setSelectedAnnId(ann.id);
                       setEditingAnnId(ann.id);
                     }}
-                    className={`absolute rounded px-2 py-1 transition-shadow duration-75 select-none ${
+                    className={`absolute transition-shadow duration-75 select-none ${
                       isSelected
-                        ? 'ring-2 ring-brand-500 shadow-xl z-30 cursor-grab active:cursor-grabbing'
-                        : 'border border-dashed border-slate-400 hover:border-brand-400 hover:shadow-md z-20 cursor-pointer'
-                    } ${isDraggingThis ? 'opacity-85 scale-105' : ''}`}
+                        ? 'outline outline-2 outline-brand-500 shadow-xl z-30 cursor-grab active:cursor-grabbing'
+                        : 'outline outline-1 outline-dashed outline-slate-400 hover:outline-brand-400 hover:shadow-md z-20 cursor-pointer'
+                    } ${isDraggingThis ? 'opacity-85 scale-[1.02]' : ''}`}
                     style={{
                       left: `${ann.xRatio * 100}%`,
                       top: `${ann.yRatio * 100}%`,
                       color: ann.color,
                       fontWeight: ann.isBold ? 700 : 400,
                       fontFamily: ann.fontFamily || '"Noto Sans KR", sans-serif',
-                      // Font size scaled relative to document zoom so it looks 1:1 identical to final output
-                      fontSize: `${ann.fontSize * (zoomLevel / 1.0)}px`,
+                      fontSize: `${calculatedFontSizePx}px`,
+                      lineHeight: 1.25,
+                      padding: 0,
+                      margin: 0,
                       backgroundColor:
                         ann.bgColor === 'transparent'
                           ? isSelected
                             ? 'rgba(255, 241, 242, 0.85)'
-                            : 'rgba(255, 255, 255, 0.4)'
+                            : 'transparent'
                           : ann.bgColor,
                     }}
                   >
@@ -590,14 +609,15 @@ export const AddTextTool: React.FC = () => {
                           }
                         }}
                         onBlur={() => setEditingAnnId(null)}
-                        className="bg-white/95 text-slate-900 border border-brand-500 outline-none px-1 rounded shadow-sm w-auto min-w-[80px]"
+                        className="bg-white/95 text-slate-900 border border-brand-500 outline-none px-0.5 rounded-none shadow-sm w-auto min-w-[80px]"
                         style={{
-                          fontSize: `${ann.fontSize * (zoomLevel / 1.0)}px`,
+                          fontSize: `${calculatedFontSizePx}px`,
                           fontFamily: ann.fontFamily || '"Noto Sans KR", sans-serif',
+                          lineHeight: 1.25,
                         }}
                       />
                     ) : (
-                      <span className="whitespace-pre-wrap leading-tight block">
+                      <span className="whitespace-pre-wrap leading-[1.25] block">
                         {ann.text || '(텍스트를 입력하세요)'}
                       </span>
                     )}
