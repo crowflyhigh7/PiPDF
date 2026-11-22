@@ -24,13 +24,49 @@ import {
 import { savePdfFile } from '../../utils/downloadHelper';
 import confetti from 'canvas-confetti';
 
-// Available font families
-const FONT_OPTIONS = [
-  { id: '"Noto Sans KR", sans-serif', label: '본고딕 (Noto Sans)' },
-  { id: '"Nanum Gothic", sans-serif', label: '나눔고딕 (Nanum Gothic)' },
-  { id: '"Nanum Myeongjo", serif', label: '나눔명조 (바탕체)' },
-  { id: '"Nanum Pen Script", cursive', label: '나눔손글씨 (필기체)' },
-  { id: 'monospace', label: '고정폭 (Monospace)' },
+// Available font families categorized for convenient selection
+const FONT_GROUPS = [
+  {
+    group: '고딕체 (기본 / 깔끔한 서식)',
+    options: [
+      { id: '"Noto Sans KR", sans-serif', label: '본고딕 (Noto Sans)' },
+      { id: '"Nanum Gothic", sans-serif', label: '나눔고딕 (Nanum Gothic)' },
+      { id: '"IBM Plex Sans KR", sans-serif', label: 'IBM 플렉스 고딕' },
+      { id: '"Plus Jakarta Sans", sans-serif', label: 'Jakarta Sans (영문/숫자 추천)' },
+    ],
+  },
+  {
+    group: '명조체 (공문서 / 계약서 / 서식)',
+    options: [
+      { id: '"Nanum Myeongjo", serif', label: '나눔명조 (대표 바탕체)' },
+      { id: '"Noto Serif KR", serif', label: '본명조 (Noto Serif)' },
+      { id: '"Song Myung", serif', label: '송명체 (전통 붓명조)' },
+    ],
+  },
+  {
+    group: '손글씨 & 서명체 (Sign / 메모)',
+    options: [
+      { id: '"Nanum Pen Script", cursive', label: '나눔손글씨 펜 (자필 서명용)' },
+      { id: '"Nanum Brush Script", cursive', label: '나눔손글씨 붓 (붓글씨 서명)' },
+      { id: '"Yeon Sung", cursive', label: '연성체 (붓글씨 감성)' },
+      { id: '"Gaegu", cursive', label: '개구체 (친근한 손글씨)' },
+      { id: '"Dongle", cursive', label: '동글체 (둥근 손글씨)' },
+    ],
+  },
+  {
+    group: '제목 & 강조체 (타이틀 / 스탬프)',
+    options: [
+      { id: '"Do Hyeon", sans-serif', label: '도현체 (시원한 제목용)' },
+      { id: '"Jua", sans-serif', label: '주아체 (부드러운 헤드라인)' },
+      { id: '"Black Han Sans", sans-serif', label: '블랙한산스 (초강조 볼드체)' },
+    ],
+  },
+  {
+    group: '고정폭 (코드 / 숫자 정렬)',
+    options: [
+      { id: 'monospace', label: '고정폭 (Monospace)' },
+    ],
+  },
 ];
 
 export const AddTextTool: React.FC = () => {
@@ -421,17 +457,21 @@ export const AddTextTool: React.FC = () => {
                   />
                 </div>
 
-                {/* 2. Font Family Selector (폰트 변경 기능) */}
+                {/* 2. Font Family Selector with Categories */}
                 <div className="flex items-center gap-1">
                   <select
                     value={selectedAnn.fontFamily || '"Noto Sans KR", sans-serif'}
                     onChange={(e) => updateSelected({ fontFamily: e.target.value })}
-                    className="bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded-md text-xs focus:outline-none focus:border-brand-500"
+                    className="bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded-md text-xs focus:outline-none focus:border-brand-500 font-medium max-w-[180px]"
                   >
-                    {FONT_OPTIONS.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.label}
-                      </option>
+                    {FONT_GROUPS.map((g) => (
+                      <optgroup key={g.group} label={g.group} className="bg-slate-800 text-slate-300 font-bold">
+                        {g.options.map((f) => (
+                          <option key={f.id} value={f.id} className="bg-slate-900 text-white font-normal">
+                            {f.label}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>
