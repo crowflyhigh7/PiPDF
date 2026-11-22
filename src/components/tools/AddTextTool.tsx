@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileUploader } from '../FileUploader';
 import { addTextAnnotationsToPdf, TextAnnotationItem } from '../../utils/pdfOperations';
+import { renderTextToCanvas } from '../../utils/textRenderer';
 import { pdfjsLib } from '../../utils/pdfWorker';
 import { PageThumbnail } from '../PageThumbnail';
 import {
@@ -554,12 +555,16 @@ export const AddTextTool: React.FC = () => {
                 className="w-full h-auto pointer-events-none rounded-sm"
               />
 
-              {/* Overlaid Draggable & In-Place Text Annotations */}
+              {/* Overlaid Draggable & In-Place Text Annotations with 100% Shared WYSIWYG Renderer */}
               {currentPageAnnotations.map((ann) => {
                 const isSelected = ann.id === selectedAnnId;
                 const isEditing = ann.id === editingAnnId;
                 const isDraggingThis = draggingAnnId === ann.id;
-                const calculatedFontSizePx = ann.fontSize * ptToPxRatio;
+
+                // Render exact identical canvas image so screen preview is 100% identical to PDF output
+                const rendered = renderTextToCanvas(ann, 2.5);
+                const displayWidthPx = rendered.widthPt * ptToPxRatio;
+                const displayHeightPx = rendered.heightPt * ptToPxRatio;
 
                 return (
                   <div
@@ -578,23 +583,14 @@ export const AddTextTool: React.FC = () => {
                       isSelected
                         ? 'outline outline-2 outline-brand-500 shadow-xl z-30 cursor-grab active:cursor-grabbing'
                         : 'outline outline-1 outline-dashed outline-slate-400 hover:outline-brand-400 hover:shadow-md z-20 cursor-pointer'
-                    } ${isDraggingThis ? 'opacity-85 scale-[1.02]' : ''}`}
+                    } ${isDraggingThis ? 'opacity-85 scale-[1.01]' : ''}`}
                     style={{
                       left: `${ann.xRatio * 100}%`,
                       top: `${ann.yRatio * 100}%`,
-                      color: ann.color,
-                      fontWeight: ann.isBold ? 700 : 400,
-                      fontFamily: ann.fontFamily || '"Noto Sans KR", sans-serif',
-                      fontSize: `${calculatedFontSizePx}px`,
-                      lineHeight: 1.25,
+                      width: displayWidthPx > 0 ? `${displayWidthPx}px` : 'auto',
+                      height: displayHeightPx > 0 ? `${displayHeightPx}px` : 'auto',
                       padding: 0,
                       margin: 0,
-                      backgroundColor:
-                        ann.bgColor === 'transparent'
-                          ? isSelected
-                            ? 'rgba(255, 241, 242, 0.85)'
-                            : 'transparent'
-                          : ann.bgColor,
                     }}
                   >
                     {isEditing ? (
@@ -609,16 +605,23 @@ export const AddTextTool: React.FC = () => {
                           }
                         }}
                         onBlur={() => setEditingAnnId(null)}
-                        className="bg-white/95 text-slate-900 border border-brand-500 outline-none px-0.5 rounded-none shadow-sm w-auto min-w-[80px]"
+                        className="bg-white/95 text-slate-900 border border-brand-500 outline-none px-0.5 rounded-none shadow-sm w-full h-full"
                         style={{
-                          fontSize: `${calculatedFontSizePx}px`,
+                          fontSize: `${ann.fontSize * ptToPxRatio}px`,
                           fontFamily: ann.fontFamily || '"Noto Sans KR", sans-serif',
                           lineHeight: 1.25,
                         }}
                       />
+                    ) : rendered.dataUrl && ann.text ? (
+                      <img
+                        src={rendered.dataUrl}
+                        alt={ann.text}
+                        className="w-full h-full object-contain pointer-events-none block"
+                        draggable={false}
+                      />
                     ) : (
-                      <span className="whitespace-pre-wrap leading-[1.25] block">
-                        {ann.text || '(텍스트를 입력하세요)'}
+                      <span className="text-slate-400 text-xs italic block px-1">
+                        (텍스트를 입력하세요)
                       </span>
                     )}
 

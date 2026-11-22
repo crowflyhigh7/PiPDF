@@ -1,6 +1,7 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import { pdfjsLib } from './pdfWorker';
 import { PageNumberOptions, WatermarkOptions } from '../types';
+import { renderTextToCanvas } from './textRenderer';
 
 /**
  * Helper to convert File to ArrayBuffer
@@ -492,57 +493,18 @@ export async function addTextAnnotationsToPdf(
     const page = pdfDoc.getPage(ann.pageIndex);
     const { width, height } = page.getSize();
 
-    // Render text to canvas to preserve all Korean and unicode glyphs cleanly
-    const scale = 3; // HiDPI
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) continue;
+    // Use unified shared renderer to guarantee 100% WYSIWYG match
+    const rendered = renderTextToCanvas(ann, 3);
+    if (!rendered.dataUrl) continue;
 
-    const chosenFont = ann.fontFamily || 'Pretendard, "Noto Sans KR", sans-serif';
-    const fontStyle = `${ann.isBold ? 'bold ' : ''}${ann.fontSize * scale}px ${chosenFont}, sans-serif`;
-    ctx.font = fontStyle;
-
-    const lines = ann.text.split('\n');
-    let maxLineWidth = 0;
-    lines.forEach((l) => {
-      const w = ctx.measureText(l).width;
-      if (w > maxLineWidth) maxLineWidth = w;
-    });
-
-    // Exact tight line height to match CSS line-height: 1.25
-    const lineHeight = ann.fontSize * scale * 1.25;
-    const canvasWidth = Math.max(1, Math.ceil(maxLineWidth));
-    const canvasHeight = Math.max(1, Math.ceil(lineHeight * lines.length));
-
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    // Background if specified
-    if (ann.bgColor && ann.bgColor !== 'transparent') {
-      ctx.fillStyle = ann.bgColor;
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-    }
-
-    // Text rendering with ZERO top/left padding to guarantee 1:1 alignment
-    ctx.font = fontStyle;
-    ctx.fillStyle = ann.color;
-    ctx.textBaseline = 'top';
-
-    lines.forEach((l, i) => {
-      ctx.fillText(l, 0, Math.round(i * lineHeight));
-    });
-
-    const dataUrl = canvas.toDataURL('image/png');
-    const res = await fetch(dataUrl);
+    const res = await fetch(rendered.dataUrl);
     const imgBuffer = await res.arrayBuffer();
     const embeddedImg = await pdfDoc.embedPng(imgBuffer);
 
-    // Points dimensions in PDF
-    const drawWidth = canvasWidth / scale;
-    const drawHeight = canvasHeight / scale;
+    const drawWidth = rendered.widthPt;
+    const drawHeight = rendered.heightPt;
 
-    // In PDF coordinates: bottom-left is (0,0), top is height
-    // HTML yRatio is measured from the top edge (0.0 at top, 1.0 at bottom)
+    // PDF coordinates: bottom-left (0,0). Screen: top-left (0,0)
     const x = width * ann.xRatio;
     const topYInPdf = height - (height * ann.yRatio);
     const y = topYInPdf - drawHeight;
