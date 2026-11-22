@@ -12,6 +12,7 @@ import {
   Hash,
   Stamp,
   PenTool,
+  Type,
   Lock,
   Unlock,
   File,
@@ -48,6 +49,8 @@ export const DynamicIcon: React.FC<DynamicIconProps> = ({ name, className = 'w-6
       return <Stamp className={className} />;
     case 'PenTool':
       return <PenTool className={className} />;
+    case 'Type':
+      return <Type className={className} />;
     case 'Lock':
       return <Lock className={className} />;
     case 'Unlock':

@@ -131,6 +131,11 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTool }) => {
                 전자 서명 (Sign)
               </button>
             </li>
+            <li>
+              <button onClick={() => onSelectTool('add-text')} className="hover:text-white transition-colors">
+                텍스트 추가 (Edit PDF)
+              </button>
+            </li>
           </ul>
         </div>
 

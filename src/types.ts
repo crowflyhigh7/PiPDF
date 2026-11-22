@@ -10,6 +10,7 @@ export type ToolId =
   | 'watermark'
   | 'page-numbers'
   | 'sign'
+  | 'add-text'
   | 'protect'
   | 'unlock'
   | 'pdf-to-text';

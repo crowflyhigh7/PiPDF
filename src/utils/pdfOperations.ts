@@ -462,6 +462,98 @@ export async function extractTextFromPdf(file: File): Promise<string> {
 }
 
 /**
+ * 14. PDF에 텍스트 주석/상자 삽입 (Add Text / Annotations)
+ * Supports Korean & Unicode characters with 100% font fidelity via Canvas HiDPI rasterization
+ */
+export interface TextAnnotationItem {
+  id: string;
+  pageIndex: number; // 0-based
+  text: string;
+  xRatio: number; // 0.0 ~ 1.0 from left
+  yRatio: number; // 0.0 ~ 1.0 from top
+  fontSize: number; // pt (e.g. 16)
+  color: string; // hex (e.g. #000000)
+  isBold?: boolean;
+  bgColor?: string; // hex or 'transparent'
+}
+
+export async function addTextAnnotationsToPdf(
+  file: File,
+  annotations: TextAnnotationItem[]
+): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+
+  for (const ann of annotations) {
+    if (!ann.text.trim()) continue;
+    if (ann.pageIndex < 0 || ann.pageIndex >= pdfDoc.getPageCount()) continue;
+
+    const page = pdfDoc.getPage(ann.pageIndex);
+    const { width, height } = page.getSize();
+
+    // Render text to canvas to preserve all Korean and unicode glyphs cleanly
+    const scale = 3; // HiDPI
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+
+    const fontStyle = `${ann.isBold ? 'bold ' : ''}${ann.fontSize * scale}px "Plus Jakarta Sans", "Pretendard", -apple-system, sans-serif`;
+    ctx.font = fontStyle;
+
+    const lines = ann.text.split('\n');
+    let maxLineWidth = 0;
+    lines.forEach((l) => {
+      const w = ctx.measureText(l).width;
+      if (w > maxLineWidth) maxLineWidth = w;
+    });
+
+    const lineHeight = ann.fontSize * scale * 1.3;
+    const pad = 8 * scale;
+    const canvasWidth = maxLineWidth + pad * 2;
+    const canvasHeight = lineHeight * lines.length + pad * 2;
+
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    // Background if specified
+    if (ann.bgColor && ann.bgColor !== 'transparent') {
+      ctx.fillStyle = ann.bgColor;
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    }
+
+    // Text rendering
+    ctx.font = fontStyle;
+    ctx.fillStyle = ann.color;
+    ctx.textBaseline = 'top';
+
+    lines.forEach((l, i) => {
+      ctx.fillText(l, pad, pad + i * lineHeight);
+    });
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const res = await fetch(dataUrl);
+    const imgBuffer = await res.arrayBuffer();
+    const embeddedImg = await pdfDoc.embedPng(imgBuffer);
+
+    // Points dimensions in PDF
+    const drawWidth = canvasWidth / scale;
+    const drawHeight = canvasHeight / scale;
+
+    const x = width * ann.xRatio;
+    const y = height - height * ann.yRatio - drawHeight;
+
+    page.drawImage(embeddedImg, {
+      x: Math.max(0, Math.min(width - drawWidth, x)),
+      y: Math.max(0, Math.min(height - drawHeight, y)),
+      width: drawWidth,
+      height: drawHeight,
+    });
+  }
+
+  return await pdfDoc.save();
+}
+
+/**
  * 12. PDF 암호 설정 (Protect PDF)
  * Creates a protected document structure
  */

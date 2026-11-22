@@ -17,6 +17,7 @@ import { RotateTool } from './components/tools/RotateTool';
 import { WatermarkTool } from './components/tools/WatermarkTool';
 import { PageNumberTool } from './components/tools/PageNumberTool';
 import { SignTool } from './components/tools/SignTool';
+import { AddTextTool } from './components/tools/AddTextTool';
 import { ProtectTool } from './components/tools/ProtectTool';
 import { UnlockTool } from './components/tools/UnlockTool';
 import { PdfToTextTool } from './components/tools/PdfToTextTool';
@@ -51,6 +52,8 @@ export const App: React.FC = () => {
         return <PageNumberTool />;
       case 'sign':
         return <SignTool />;
+      case 'add-text':
+        return <AddTextTool />;
       case 'protect':
         return <ProtectTool />;
       case 'unlock':

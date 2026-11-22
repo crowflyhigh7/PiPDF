@@ -97,6 +97,15 @@ export const TOOLS_DATA: ToolItem[] = [
     badge: 'NEW',
     popular: true,
   },
+  {
+    id: 'add-text',
+    title: '텍스트 추가 (Edit PDF)',
+    shortDesc: 'PDF 원하는 위치를 클릭하여 한글/영문 텍스트를 자유롭게 삽입합니다.',
+    category: 'edit',
+    iconName: 'Type',
+    badge: 'NEW',
+    popular: true,
+  },
   // 5. Security
   {
     id: 'protect',
