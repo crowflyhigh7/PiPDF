@@ -16,6 +16,8 @@ export const OrganizeTool: React.FC = () => {
   const [isDone, setIsDone] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [editingOrderIdx, setEditingOrderIdx] = useState<number | null>(null);
+  const [targetInput, setTargetInput] = useState<string>('');
 
   useEffect(() => {
     if (!file) {
@@ -86,6 +88,22 @@ export const OrganizeTool: React.FC = () => {
     setDragOverIndex(null);
   };
 
+  const handleJumpSubmit = (fromIndex: number) => {
+    const pageNum = parseInt(targetInput, 10);
+    setEditingOrderIdx(null);
+
+    if (isNaN(pageNum)) return;
+
+    // Convert 1-based target page number to 0-based index
+    const targetIndex = Math.max(0, Math.min(pageOrder.length - 1, pageNum - 1));
+    if (fromIndex === targetIndex) return;
+
+    const updated = [...pageOrder];
+    const [movedItem] = updated.splice(fromIndex, 1);
+    updated.splice(targetIndex, 0, movedItem);
+    setPageOrder(updated);
+  };
+
   const rotatePage = (pageIdx: number) => {
     setRotations((prev) => ({
       ...prev,
@@ -146,7 +164,7 @@ export const OrganizeTool: React.FC = () => {
             <div>
               <h3 className="text-base font-bold text-slate-800">{file.name}</h3>
               <p className="text-xs text-slate-400">
-                총 {pageOrder.length}페이지 중 {pageOrder.length - deletedPages.size}페이지 유지됨 • 마우스 드래그로 순서 변경 가능
+                총 {pageOrder.length}페이지 중 {pageOrder.length - deletedPages.size}페이지 유지됨 • 드래그 또는 #번호 클릭으로 순서 변경
               </p>
             </div>
 
@@ -211,10 +229,47 @@ export const OrganizeTool: React.FC = () => {
                 >
                   {/* Top Bar for page actions */}
                   <div className="flex items-center justify-between mb-2">
-                    <span className="inline-flex items-center gap-1 text-xs font-black text-slate-500 px-2 py-0.5 bg-white rounded-md shadow-xs border border-slate-200">
-                      <GripVertical className="w-3 h-3 text-slate-400" />
-                      #{orderIdx + 1}
-                    </span>
+                    {editingOrderIdx === orderIdx ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleJumpSubmit(orderIdx);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center"
+                      >
+                        <input
+                          type="number"
+                          min="1"
+                          max={pageOrder.length}
+                          autoFocus
+                          value={targetInput}
+                          onChange={(e) => setTargetInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setEditingOrderIdx(null);
+                            }
+                          }}
+                          onBlur={() => handleJumpSubmit(orderIdx)}
+                          className="w-14 h-6 text-xs font-black text-center border-2 border-brand-500 rounded bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 shadow-sm"
+                          placeholder="번호"
+                        />
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingOrderIdx(orderIdx);
+                          setTargetInput((orderIdx + 1).toString());
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-black text-slate-600 hover:text-brand-600 hover:border-brand-400 px-2 py-0.5 bg-white hover:bg-brand-50/80 rounded-md shadow-xs border border-slate-200 transition-colors group/badge"
+                        title="클릭하여 목표 페이지 번호로 바로 이동"
+                      >
+                        <GripVertical className="w-3 h-3 text-slate-400 group-hover/badge:text-brand-500" />
+                        <span>#{orderIdx + 1}</span>
+                      </button>
+                    )}
 
                     <div className="flex items-center gap-1">
                       <button
