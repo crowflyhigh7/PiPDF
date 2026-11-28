@@ -3,7 +3,7 @@ import { FileUploader } from '../FileUploader';
 import { organizePdf } from '../../utils/pdfOperations';
 import { pdfjsLib } from '../../utils/pdfWorker';
 import { PageThumbnail } from '../PageThumbnail';
-import { RotateCw, Trash2, ArrowLeft, ArrowRight, Download, Loader2, Undo2, CheckCircle2, RefreshCw } from 'lucide-react';
+import { RotateCw, Trash2, ArrowLeft, ArrowRight, Download, Loader2, Undo2, CheckCircle2, RefreshCw, GripVertical } from 'lucide-react';
 import { savePdfFile } from '../../utils/downloadHelper';
 import confetti from 'canvas-confetti';
 
@@ -14,6 +14,8 @@ export const OrganizeTool: React.FC = () => {
   const [deletedPages, setDeletedPages] = useState<Set<number>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDone, setIsDone] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!file) {
@@ -46,6 +48,42 @@ export const OrganizeTool: React.FC = () => {
     updated[currentIndex] = updated[targetIndex];
     updated[targetIndex] = temp;
     setPageOrder(updated);
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const updated = [...pageOrder];
+    const [movedItem] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, movedItem);
+
+    setPageOrder(updated);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const rotatePage = (pageIdx: number) => {
@@ -108,7 +146,7 @@ export const OrganizeTool: React.FC = () => {
             <div>
               <h3 className="text-base font-bold text-slate-800">{file.name}</h3>
               <p className="text-xs text-slate-400">
-                총 {pageOrder.length}페이지 중 {pageOrder.length - deletedPages.size}페이지 유지됨
+                총 {pageOrder.length}페이지 중 {pageOrder.length - deletedPages.size}페이지 유지됨 • 마우스 드래그로 순서 변경 가능
               </p>
             </div>
 
@@ -150,32 +188,52 @@ export const OrganizeTool: React.FC = () => {
             {pageOrder.map((pageIdx, orderIdx) => {
               const isDeleted = deletedPages.has(pageIdx);
               const rotation = rotations[pageIdx] || 0;
+              const isDragging = draggedIndex === orderIdx;
+              const isOver = dragOverIndex === orderIdx && draggedIndex !== orderIdx;
 
               return (
                 <div
                   key={pageIdx}
-                  className={`relative group bg-slate-50 rounded-2xl p-3 border-2 transition-all flex flex-col justify-between ${
-                    isDeleted
+                  draggable={!isProcessing}
+                  onDragStart={(e) => handleDragStart(e, orderIdx)}
+                  onDragOver={(e) => handleDragOver(e, orderIdx)}
+                  onDrop={(e) => handleDrop(e, orderIdx)}
+                  onDragEnd={handleDragEnd}
+                  className={`relative group bg-slate-50 rounded-2xl p-3 border-2 transition-all duration-150 flex flex-col justify-between cursor-grab active:cursor-grabbing select-none ${
+                    isDragging
+                      ? 'opacity-40 scale-95 border-dashed border-brand-500 bg-brand-50/30'
+                      : isOver
+                      ? 'ring-4 ring-brand-400 ring-offset-2 border-brand-500 bg-brand-50/60 scale-[1.03] shadow-lg z-10'
+                      : isDeleted
                       ? 'border-rose-300 bg-rose-50/50 opacity-50'
                       : 'border-slate-200 hover:border-brand-400 hover:shadow-md'
                   }`}
                 >
                   {/* Top Bar for page actions */}
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-black text-slate-500 px-2 py-0.5 bg-white rounded-md shadow-xs border border-slate-200">
+                    <span className="inline-flex items-center gap-1 text-xs font-black text-slate-500 px-2 py-0.5 bg-white rounded-md shadow-xs border border-slate-200">
+                      <GripVertical className="w-3 h-3 text-slate-400" />
                       #{orderIdx + 1}
                     </span>
 
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => rotatePage(pageIdx)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rotatePage(pageIdx);
+                        }}
                         className="p-1 text-slate-600 hover:text-brand-600 hover:bg-white rounded transition-colors"
                         title="90도 회전"
                       >
                         <RotateCw className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => toggleDeletePage(pageIdx)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDeletePage(pageIdx);
+                        }}
                         className={`p-1 rounded transition-colors ${
                           isDeleted
                             ? 'text-emerald-600 hover:bg-emerald-100'
@@ -189,7 +247,7 @@ export const OrganizeTool: React.FC = () => {
                   </div>
 
                   {/* Thumbnail */}
-                  <div className="relative">
+                  <div className="relative pointer-events-none">
                     <PageThumbnail
                       file={file}
                       pageNumber={pageIdx + 1}
@@ -206,8 +264,12 @@ export const OrganizeTool: React.FC = () => {
                   {/* Move Left / Right buttons */}
                   <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between">
                     <button
+                      type="button"
                       disabled={orderIdx === 0}
-                      onClick={() => movePage(orderIdx, 'left')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        movePage(orderIdx, 'left');
+                      }}
                       className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-20 rounded hover:bg-white transition-colors"
                       title="앞으로 이동"
                     >
@@ -217,8 +279,12 @@ export const OrganizeTool: React.FC = () => {
                       원본 {pageIdx + 1}p
                     </span>
                     <button
+                      type="button"
                       disabled={orderIdx === pageOrder.length - 1}
-                      onClick={() => movePage(orderIdx, 'right')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        movePage(orderIdx, 'right');
+                      }}
                       className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-20 rounded hover:bg-white transition-colors"
                       title="뒤로 이동"
                     >
